@@ -1,0 +1,90 @@
+---
+title: "Machine Learning for sport monitoring"
+---
+###Issue and Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+In this project, my goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+The goal of the project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. 
+
+Let's load needed packages: library(caret), library(ggplot2)
+```{r}
+require(caret); require(ggplot2)
+```
+
+The data can be downloaded fro the project web page:
+training data - https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+test data - https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+Let's do it:
+```{r, results="hide"}
+downloadData <- function(URL="", destFile="data.csv"){
+  if(!file.exists(destFile)){
+    download.file(URL, destFile, method="curl")
+  }else{
+    message("Dataset already downloaded.")
+  }
+}
+
+trainURL<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testURL <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+downloadData(trainURL, "pml-training.csv")
+downloadData(testURL, "pml-testing.csv")
+```
+
+Let's load the data in R
+```{r}
+ori_train <- read.table("pml-training.csv",sep=",",header=TRUE,na.strings=c('NA','','#DIV/0!'))
+ori_test <- read.table("pml-testing.csv",sep=",",header=TRUE,na.strings=c('NA','','#DIV/0!'))
+```
+
+From a quick exploratory analysis I observed that:
+There are `r nrow(ori_train)` observations in the training set and `r nrow(ori_test)` in the test set. The two datasets have the same number of variables but they differ by the last one ("classe"" in the training set and "problem_id" in the testset). The "classe" column is the one that we want to predict.
+Many values are missing from both the datasets.
+We don't need the first 7 columns for our purposes: these are descriptive data like the user name, timestamps or a new_window variable
+
+Let's clean the data
+
+```{r}
+#find which columns of the training set sum to NA
+NAs1 <- apply(ori_train,2,function(x) {sum(is.na(x))})
+#remove that colums
+cTrain <- ori_train[,which(NAs1 == 0)]
+
+#find which columns of the test set sum to NA
+NAs2 <- apply(ori_test,2,function(x) {sum(is.na(x))})
+#remove that colums
+cTest <- ori_test[,which(NAs2 == 0)]
+
+#from the two datasets let's remove the first 7 columns that don't appear to be useful for our predictive purposes
+cTrain<-cTrain[,-(1:7)]
+cTest<-cTest[,-(1:7)]
+```
+
+With the cleaned data, let's build the model:
+I decided to split the training set in two subset, one will contain the 70% of the data and the remaining one the 30%, I will use the bigger subset to train the model and the other one for crossvalidation
+
+```{r}
+#Let's split the data
+trIndex <- createDataPartition(y = cTrain$classe, p=0.7,list=FALSE)
+trSet <- cTrain[trIndex,]
+CVSet <- cTrain[-trIndex,]
+```
+
+Now we go: I run the model fit, that I choose to be the random forest and I subsequently apply it to the test set.
+I used cross validation to resample my training set through the "cv" method option in the TrainControl function
+
+```{r cache=TRUE}
+mytrControl <- trainControl(method = "cv", number = 4)
+modelFit <- train(trSet$classe ~.,data = trSet, method="rf", trControl = mytrControl)
+modelFit
+predicted <- predict(modelFit, CVSet)
+
+```
+To evaluate the sample error I computed the percentage of correct predictions.
+```{r}
+SampleError <- sum(predicted == CVSet$classe)/nrow(CVSet)
+```
+The Percentage of correctly predicted values is `r round(SampleError,2)*100`% this means that the Sample error is 1% and this can be considered a good prediction for the out of sample error as I'm using a random forest algorithm.
+It's resonable to assume that the Sample error is unbiased and actually my model performed well on the test set: I could predict correctly the classe variable for all the observations in the test set).
+
